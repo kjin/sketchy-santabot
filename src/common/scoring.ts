@@ -1,4 +1,4 @@
-import { Action, Scoring } from "./santa";
+import { Action, Scoring } from './santa';
 
 export const scoring: Scoring = {
   actions: (action: Action, yearsAgo: number): number => {

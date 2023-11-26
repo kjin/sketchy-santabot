@@ -1,4 +1,4 @@
-import seedrandom from "seedrandom";
+import seedrandom from 'seedrandom';
 
 export type Arrangement = Array<[string, string]>;
 
@@ -51,7 +51,7 @@ export class SantaBot {
       let currentGiver = giver;
       while (!seenGivers.has(currentGiver)) {
         seenGivers.add(currentGiver);
-        const foundPair = preSortedResult.find(([x]) => x === currentGiver);
+        const foundPair = preSortedResult.find(([x]) => x === currentGiver)!;
         result.push(foundPair);
         currentGiver = foundPair[1];
       }
@@ -87,7 +87,7 @@ export class SantaBot {
     participants?: string[]
   ): Arrangement {
     const random = seedrandom(seed.toString(16));
-    let bestArrangement = null;
+    let bestArrangement: Arrangement | null = null;
     let bestPenalty = Infinity;
     for (let j = 0; j < iterations; j++) {
       const stagedArrangement = this.generateArrangement(
@@ -100,6 +100,9 @@ export class SantaBot {
         bestPenalty = stagedPenalty;
       }
       if (bestPenalty === 0) break;
+    }
+    if (bestArrangement === null) {
+      throw new Error(`No arrangements found -- is iterations > 0?`);
     }
     return bestArrangement;
   }
@@ -143,7 +146,7 @@ export class SantaBot {
     scoreFns?: Scoring
   ): string {
     const rings: string[][] = [];
-    let str = "";
+    let str = '';
     let totalPenalty = 0;
     for (const [giver, receiver] of arrangement) {
       str += `${giver} gives to ${receiver}`;
@@ -153,7 +156,7 @@ export class SantaBot {
       } else {
         rings.push([giver, receiver]);
       }
-      const penaltyStrings = [];
+      const penaltyStrings: string[] = [];
       if (scoreFns) {
         {
           const foundIndex =
@@ -185,12 +188,12 @@ export class SantaBot {
         }
       }
       if (penaltyStrings.length > 0) {
-        str += ` (${penaltyStrings.join(", ")})`;
+        str += ` (${penaltyStrings.join(', ')})`;
       }
-      str += "\n";
+      str += '\n';
     }
     const ringSizes = rings.map((x) => x.length - 1);
-    str += `Ring Sizes: ${ringSizes.join(", ")}`;
+    str += `Ring Sizes: ${ringSizes.join(', ')}`;
     if (scoreFns) {
       const penalty = scoreFns.rings(ringSizes);
       if (penalty) {

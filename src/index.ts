@@ -1,19 +1,19 @@
-import * as rl from "readline";
-import { google } from "googleapis";
-import { Arrangement, SantaBot } from "./common/santa";
-import { scoring } from "./common/scoring";
-import { authorizeGoogleAPIs } from "./googleapis";
-import { readFile } from "fs/promises";
-import { createRawEmail, EmailMessage, encodeEmail } from "./common/email";
-import { OAuth2Client } from "google-auth-library";
+import * as rl from 'readline';
+import { google } from 'googleapis';
+import { Arrangement, SantaBot } from './common/santa';
+import { scoring } from './common/scoring';
+import { authorizeGoogleAPIs } from './googleapis';
+import { readFile } from 'fs/promises';
+import { createRawEmail, EmailMessage, encodeEmail } from './common/email';
+import { OAuth2Client } from 'google-auth-library';
 
 /**
  * Scopes need for Sketchy Santabot to work.
  * If modifying these scopes, delete token.json.
  */
 const SCOPES = [
-  "https://www.googleapis.com/auth/spreadsheets.readonly",
-  "https://www.googleapis.com/auth/gmail.compose",
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/gmail.compose',
 ];
 
 /**
@@ -67,7 +67,9 @@ interface Config {
    * The directory to be used to store authorization tokens to Google APIs,
    * relative to the current working directory.
    * It should already contain a file named credentials.json which enables
-   * access to SCOPES.
+   * access to SCOPES. A `token-(...).json` will also be generated in this
+   * directory at runtime. Note that if there is an existing token file from a
+   * run a long time ago, it may be expired and should be deleted.
    * If omitted, a directory named "auth" in the current working directory
    * is used.
    */
@@ -119,8 +121,8 @@ interface SpreadsheetRange {
 interface SketchySantaTemplateReplacements {
   Santa: string;
   Recipient: string;
-  "Recipient email": string;
-  "Recipient wishlist": string;
+  'Recipient email': string;
+  'Recipient wishlist': string;
   Organizer: string;
   Year: string;
 }
@@ -129,12 +131,13 @@ class SketchySantaBot extends SantaBot {
   constructor(data: any[][]) {
     super();
     const input = data.slice(1) as string[][];
-    for (const [giver, ...recipients] of input) {
+    for (const [giver, ...recipientsIn] of input) {
+      const recipients = [...recipientsIn] as Array<string | null>;
       if (!giver) break;
       recipients.reverse();
       for (let i = 0; i < recipients.length; i++) {
         if (!recipients[i]) break;
-        if (recipients[i] === "----") {
+        if (recipients[i] === '----') {
           recipients[i] = null;
         }
       }
@@ -167,11 +170,11 @@ async function main(args: string[]) {
     );
     process.exit(1);
   }
-  const config: Required<Config> = JSON.parse(await readFile(args[0], "utf8"));
+  const config: Required<Config> = JSON.parse(await readFile(args[0], 'utf8'));
   config.seed = Number(args[1]) || (config.seed ?? -1);
   config.iterations = Number(args[2]) || (config.iterations ?? 10000);
   config.year = config.year ?? new Date().getFullYear();
-  config.authDir = config.authDir ?? "./auth";
+  config.authDir = config.authDir ?? './auth';
 
   let auth: OAuth2Client;
   try {
@@ -186,12 +189,15 @@ async function main(args: string[]) {
     console.error(`Original error: ${e}`);
     process.exit(1);
   }
-  const sheets = google.sheets({ version: "v4", auth });
+  const sheets = google.sheets({ version: 'v4', auth });
 
   const wishlistMap = new Map();
   let wishlistTotalLength = 0; // To be used to create a seed
   {
     const res = await sheets.spreadsheets.values.get(config.data.surveySheet);
+    if (res.data.values == null) {
+      throw new Error(`Form responses sheet may be malformed`);
+    }
     const surveyData = res.data.values.slice(1) as string[][];
     for (const [, email, wishlist] of surveyData) {
       // Assumes that emails are not case-sensitive.
@@ -208,25 +214,31 @@ async function main(args: string[]) {
   const emailToRecipient = new Map();
   {
     const res = await sheets.spreadsheets.values.get(config.data.emailSheet);
+    if (res.data.values == null) {
+      throw new Error(`Email addresses sheet may be malformed`);
+    }
     const emails = res.data.values.slice(1) as string[][];
     for (const [recipient, email] of emails) {
       recipientToEmail.set(recipient, email);
       emailToRecipient.set(email, recipient);
     }
   }
-  console.error("Fetched email addresses");
+  console.error('Fetched email addresses');
 
   for (const [email] of wishlistMap) {
     if (!emailToRecipient.has(email)) {
       throw new Error(`Unknown email: ${email}`);
     }
   }
-  console.error("Validated email addresses");
+  console.error('Validated email addresses');
 
   let arrangement!: Arrangement;
   let foundOptimal: boolean;
   {
     const res = await sheets.spreadsheets.values.get(config.data.historySheet);
+    if (res.data.values == null) {
+      throw new Error(`History sheet may be malformed`);
+    }
     const bot = new SketchySantaBot(res.data.values);
     const participants = [...wishlistMap].map(
       ([email]) => emailToRecipient.get(email)!
@@ -252,7 +264,7 @@ async function main(args: string[]) {
     console.log();
   }
   console.error(
-    `Generated ${foundOptimal ? "" : "non-"}optimal secret santa arrangement`
+    `Generated ${foundOptimal ? '' : 'non-'}optimal secret santa arrangement`
   );
 
   const emails: EmailMessage[] = [];
@@ -260,18 +272,21 @@ async function main(args: string[]) {
     const res = await sheets.spreadsheets.values.get(
       config.data.emailTemplateSheet
     );
+    if (res.data.values == null) {
+      throw new Error(`Email template sheet may be malformed`);
+    }
     const template = res.data.values[0][0];
     for (const [giver, receiver] of arrangement) {
       const body = replaceInString<SketchySantaTemplateReplacements>(template, {
-        Santa: giver.split(" ")[0], // Remove last initials
+        Santa: giver.split(' ')[0], // Remove last initials
         Recipient: `<b>${receiver}</b>`,
-        "Recipient email": recipientToEmail.get(receiver)!,
-        "Recipient wishlist": wishlistMap
+        'Recipient email': recipientToEmail.get(receiver)!,
+        'Recipient wishlist': wishlistMap
           .get(recipientToEmail.get(receiver)!)!
           .trim()
-          .split("\n")
+          .split('\n')
           .map((x) => `<b>${x}</b>`)
-          .join("\n"),
+          .join('\n'),
         Organizer: config.fromName,
         Year: `${config.year}`,
       });
@@ -280,7 +295,7 @@ async function main(args: string[]) {
         fromAddress: config.fromAddress, // Will get replaced anyway
         toName: giver,
         toAddress:
-          (process.env.SEND_EMAILS_FOR_REAL || "").toLowerCase() === "yes"
+          (process.env.SEND_EMAILS_FOR_REAL || '').toLowerCase() === 'yes'
             ? recipientToEmail.get(giver)!
             : config.fromAddress,
         subject: `Secret Santa ${config.year}`,
@@ -288,29 +303,29 @@ async function main(args: string[]) {
       });
     }
   }
-  console.error("Generated email bodies");
+  console.error('Generated email bodies');
 
-  const previews = [];
+  const previews: string[] = [];
   for (const email of emails) {
-    previews.push(["======", createRawEmail(email), "======"].join("\n"));
+    previews.push(['======', createRawEmail(email), '======'].join('\n'));
   }
-  console.log(previews.join("\n\n"));
-  console.error("Output email previews");
+  console.log(previews.join('\n\n'));
+  console.error('Output email previews');
 
   await new Promise<void>((res) => {
     const prompt = rl.createInterface({
       input: process.stdin,
       output: process.stderr,
     });
-    prompt.question("-> Press Enter to send emails", () => {
+    prompt.question('-> Press Enter to send emails', () => {
       prompt.close();
       res();
     });
   });
-  const gmail = await google.gmail({ version: "v1", auth });
+  const gmail = await google.gmail({ version: 'v1', auth });
   for (const email of emails) {
     const res = await gmail.users.messages.send({
-      userId: "me",
+      userId: 'me',
       requestBody: {
         raw: encodeEmail(email),
       },
@@ -318,7 +333,7 @@ async function main(args: string[]) {
     console.error(`--- Response for email sent to ${email.toAddress} ---`);
     console.error(res.data);
   }
-  console.error("Emails sent");
+  console.error('Emails sent');
 }
 
 main(process.argv.slice(2));
